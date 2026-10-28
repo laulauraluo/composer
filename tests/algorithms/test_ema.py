@@ -120,3 +120,53 @@ def test_ema_algorithm(params, model_cls, minimal_state, empty_logger):
     # Check if the training model is swapped back in for training
     algorithm.apply(Event.EVAL_END, state, empty_logger)
     validate_model(state.model, training_updated_model)
+
+
+@pytest.mark.parametrize('ema_weights_active', [False, True])
+def test_load_legacy_state_requires_initialization(ema_weights_active):
+    ema = EMA()
+    state = {
+        'training_model': {
+            'weight': torch.tensor([1.])
+        },
+        'ema_model': {
+            'weight': torch.tensor([2.])
+        },
+        'ema_weights_active': ema_weights_active,
+    }
+    original_state = copy.deepcopy(state)
+    with pytest.raises(ValueError, match='ema_model must be initialized'):
+        ema.load_state_dict(state)
+    assert state.keys() == original_state.keys()
+    for key in ('training_model', 'ema_model'):
+        torch.testing.assert_close(state[key], original_state[key])
+    assert ema.ema_model is None
+
+
+@pytest.mark.parametrize('ema_weights_active', [False, True])
+def test_load_initialized_legacy_state(ema_weights_active):
+    model = torch.nn.BatchNorm1d(1)
+    ema = EMA()
+    ema.ema_model = EMAParameters(model)
+    training_state = copy.deepcopy(model.state_dict())
+    ema_state = {key: value + 1 for key, value in training_state.items()}
+    state = {
+        'training_model': training_state,
+        'ema_model': ema_state,
+        'ema_weights_active': ema_weights_active,
+    }
+    ema.load_state_dict(state)
+    expected = training_state if ema_weights_active else ema_state
+    for key, value in ema.ema_model.named_parameters_dict.items():
+        torch.testing.assert_close(value, expected[key])
+    for key, value in ema.ema_model.named_buffers_dict.items():
+        torch.testing.assert_close(value, expected[key])
+
+
+def test_load_current_state_without_initialization():
+    source = EMA()
+    source.ema_model = EMAParameters(torch.nn.BatchNorm1d(1))
+    target = EMA()
+    target.load_state_dict(source.state_dict())
+    torch.testing.assert_close(target.ema_model.named_parameters_dict, source.ema_model.named_parameters_dict)
+    torch.testing.assert_close(target.ema_model.named_buffers_dict, source.ema_model.named_buffers_dict)

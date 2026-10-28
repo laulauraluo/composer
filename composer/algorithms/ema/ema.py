@@ -342,7 +342,9 @@ class EMA(Algorithm):
                 if key in state_dict:
                     named_buffers_dict[key] = state_dict[key]
         else:
-            ValueError(f'ema_model must be initialized before loading state dicts from versions earlier than 0.13.0')
+            raise ValueError(
+                f'ema_model must be initialized before loading state dicts from versions earlier than 0.13.0'
+            )
 
         # Update the state dict with the new format
         del state['training_model']
